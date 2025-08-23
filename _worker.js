@@ -18,7 +18,7 @@ https://raw.githubusercontent.com/mfuu/v2ray/master/v2ray
 
 let urls = [];
 let subConverter = "sc.29161319.xyz"; //在线订阅转换后端：SUBAPI.cmliussss.net。支持自建psub 可自行搭建https://github.com/bulianglin/psub
-let subConfig = "https://raw.githubusercontent.com/rule2c/Custom_Clash_Rules/refs/heads/main/Clash_noleak.ini"; //订阅配置文件
+let subConfig = "https://testingcf.jsdelivr.net/gh/Aethersailor/Custom_OpenClash_Rules@main/cfg/Custom_Clash_Lite.ini"; //订阅配置文件
 let subProtocol = 'https';
 
 export default {
@@ -826,4 +826,5 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 		});
 	}
 }
+
 
