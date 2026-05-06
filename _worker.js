@@ -323,7 +323,34 @@ function clashFix(content) {
 
 		content = result;
 	}
-	return content;
+
+	function patchClashProxyLine(line) {
+		if (!line.includes('{') || !line.includes('type: vless')) return line;
+
+		const start = line.indexOf('{');
+		const end = line.lastIndexOf('}');
+
+		if (start === -1 || end === -1 || end <= start) return line;
+
+		const prefix = line.slice(0, start + 1);
+		let body = line.slice(start + 1, end);
+		const suffix = line.slice(end);
+
+		if (!/(^|[,\s])type:\s*vless\b/.test(body)) return line;
+
+		if (!/(^|[,\s])udp:\s*true\b/.test(body)) {
+			body += ', udp: true';
+		}
+
+		if (!/(^|[,\s])packet-encoding:\s*xudp\b/.test(body)) {
+			body += ', packet-encoding: xudp';
+		}
+
+		return prefix + body + suffix;
+	}
+
+	const lines = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
+	return lines.map(patchClashProxyLine).join('\n');
 }
 
 async function proxyURL(proxyURL, url) {
