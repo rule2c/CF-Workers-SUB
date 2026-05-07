@@ -22,11 +22,12 @@ let subConfig = "https://raw.githubusercontent.com/rule2c/Customized_Rules/refs/
 let subProtocol = 'https';
 
 export default {
-	async fetch(request, env) {
+	async fetch(request, env, ctx) {
 		const userAgentHeader = request.headers.get('User-Agent');
 		const userAgent = userAgentHeader ? userAgentHeader.toLowerCase() : "null";
 		const url = new URL(request.url);
 		const token = url.searchParams.get('token');
+		const DEBUG = env.DEBUG === '1' || env.DEBUG === 'true';
 		mytoken = env.TOKEN || mytoken;
 		BotToken = env.TGTOKEN || BotToken;
 		ChatID = env.TGID || ChatID;
@@ -50,8 +51,8 @@ export default {
 		const 访客订阅 = guestToken;
 		//console.log(`${fakeUserID}\n${fakeHostName}`); // 打印fakeID
 
-		let UD = Math.floor(((timestamp - Date.now()) / timestamp * total * 1099511627776) / 2);
-		total = total * 1099511627776;
+		const totalBytes = Number(total) * 1099511627776;
+		let UD = Math.floor(((timestamp - Date.now()) / timestamp * totalBytes) / 2);
 		let expire = Math.floor(timestamp / 1000);
 		SUBUpdateTime = env.SUBUPTIME || SUBUpdateTime;
 
@@ -69,7 +70,11 @@ export default {
 			if (env.KV) {
 				await 迁移地址列表(env, 'LINK.txt');
 				if (userAgent.includes('mozilla') && !url.search) {
-					await sendMessage(`#编辑订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+					if (TG == 1) {
+						const msgPromise = sendMessage(`#编辑订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+						if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(msgPromise);
+						else await msgPromise;
+					}
 					return await KV(request, env, 'LINK.txt', 访客订阅);
 				} else {
 					MainData = await env.KV.get('LINK.txt') || MainData;
@@ -90,7 +95,11 @@ export default {
 			}
 			MainData = 自建节点;
 			urls = await ADD(订阅链接);
-			await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+			if (TG == 1) {
+				const msgPromise = sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+				if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(msgPromise);
+				else await msgPromise;
+			}
 			const isSubConverterRequest = request.headers.get('subconverter-request') || request.headers.get('subconverter-version') || userAgent.includes('subconverter');
 			let 订阅格式 = 'base64';
 			if (!(userAgent.includes('null') || isSubConverterRequest || userAgent.includes('nekobox') || userAgent.includes(('CF-Workers-SUB').toLowerCase()))) {
@@ -122,8 +131,8 @@ export default {
 
 			const 订阅链接数组 = [...new Set(urls)].filter(item => item?.trim?.()); // 去重
 			if (订阅链接数组.length > 0) {
-				const 请求订阅响应内容 = await getSUB(订阅链接数组, request, 追加UA, userAgentHeader);
-				console.log(请求订阅响应内容);
+				const 请求订阅响应内容 = await getSUB(订阅链接数组, request, 追加UA, userAgentHeader, DEBUG);
+				if (DEBUG) console.log(请求订阅响应内容);
 				req_data += 请求订阅响应内容[0].join('\n');
 				订阅转换URL += "|" + 请求订阅响应内容[1];
 				if (订阅格式 == 'base64' && !isSubConverterRequest && 请求订阅响应内容[1].includes('://')) {
@@ -135,7 +144,7 @@ export default {
 							req_data += '\n' + atob(subConverterContent);
 						}
 					} catch (error) {
-						console.log('订阅转换请回base64失败，检查订阅转换后端是否正常运行');
+						if (DEBUG) console.log('订阅转换请回base64失败，检查订阅转换后端是否正常运行');
 					}
 				}
 			}
@@ -191,7 +200,7 @@ export default {
 			if (订阅格式 == 'base64' || token == fakeToken) {
 				return new Response(base64Data, { headers: responseHeaders });
 			} else if (订阅格式 == 'clash') {
-				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=clash&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=clash&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true&udp=true`;
 			} else if (订阅格式 == 'singbox') {
 				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=singbox&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 			} else if (订阅格式 == 'surge') {
@@ -304,17 +313,15 @@ async function MD5MD5(text) {
 function clashFix(content) {
 	const sep = content.includes('\r\n') ? '\r\n' : '\n';
 
-	if (content.includes('wireguard') && !content.includes('remote-dns-resolve')) {
-		const lines = content.split(sep);
-		content = lines.map(line => {
-			if (line.includes('type: wireguard')) {
-				const oldText = `, mtu: 1280, udp: true`;
-				const newText = `, mtu: 1280, remote-dns-resolve: true, udp: true`;
-				return line.replace(new RegExp(oldText, 'g'), newText);
-			}
-			return line;
-		}).join(sep);
-	}
+	const linesForWireguard = content.split(sep);
+	content = linesForWireguard.map(line => {
+		if (line.includes('type: wireguard') && !line.includes('remote-dns-resolve')) {
+			const oldText = `, mtu: 1280, udp: true`;
+			const newText = `, mtu: 1280, remote-dns-resolve: true, udp: true`;
+			return line.replace(new RegExp(oldText, 'g'), newText);
+		}
+		return line;
+	}).join(sep);
 
 	function patchClashProxyLine(line) {
 		if (!line.includes('{') || !line.includes('type: vless')) return line;
@@ -373,13 +380,14 @@ function clashFix(content) {
 
 	return result.join(sep);
 }
+
 async function proxyURL(proxyURL, url) {
 	const URLs = await ADD(proxyURL);
 	const fullURL = URLs[Math.floor(Math.random() * URLs.length)];
 
 	// 解析目标 URL
 	let parsedURL = new URL(fullURL);
-	console.log(parsedURL);
+	// console.log(parsedURL);
 	// 提取并可能修改 URL 组件
 	let URLProtocol = parsedURL.protocol.slice(0, -1) || 'https';
 	let URLHostname = parsedURL.hostname;
@@ -413,7 +421,7 @@ async function proxyURL(proxyURL, url) {
 	return newResponse;
 }
 
-async function getSUB(api, request, 追加UA, userAgentHeader) {
+async function getSUB(api, request, 追加UA, userAgentHeader, DEBUG = false) {
 	if (!api || api.length === 0) {
 		return [];
 	} else api = [...new Set(api)]; // 去重
@@ -427,7 +435,7 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 
 	try {
 		// 使用Promise.allSettled等待所有API请求完成，无论成功或失败
-		const responses = await Promise.allSettled(api.map(apiUrl => getUrl(request, apiUrl, 追加UA, userAgentHeader).then(response => response.ok ? response.text() : Promise.reject(response))));
+		const responses = await Promise.allSettled(api.map(apiUrl => getUrl(request, apiUrl, 追加UA, userAgentHeader, controller.signal, DEBUG).then(response => response.ok ? response.text() : Promise.reject(response))));
 
 		// 遍历所有响应
 		const modifiedResponses = responses.map((response, index) => {
@@ -455,7 +463,7 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 			};
 		});
 
-		console.log(modifiedResponses); // 输出修改后的响应数组
+		if (DEBUG) console.log(modifiedResponses); // 输出修改后的响应数组
 
 		for (const response of modifiedResponses) {
 			// 检查响应状态是否为'fulfilled'
@@ -475,7 +483,7 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 					newapi += base64Decode(content) + '\n'; // 解码并追加内容
 				} else {
 					const 异常订阅LINK = `trojan://CMLiussss@127.0.0.1:8888?security=tls&allowInsecure=1&type=tcp&headerType=none#%E5%BC%82%E5%B8%B8%E8%AE%A2%E9%98%85%20${response.apiUrl.split('://')[1].split('/')[0]}`;
-					console.log('异常订阅: ' + 异常订阅LINK);
+					if (DEBUG) console.log('异常订阅: ' + 异常订阅LINK);
 					异常订阅 += `${异常订阅LINK}\n`;
 				}
 			}
@@ -491,7 +499,7 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 	return [订阅内容, 订阅转换URLs];
 }
 
-async function getUrl(request, targetUrl, 追加UA, userAgentHeader) {
+async function getUrl(request, targetUrl, 追加UA, userAgentHeader, signal, DEBUG = false) {
 	// 设置自定义 User-Agent
 	const newHeaders = new Headers(request.headers);
 	newHeaders.set("User-Agent", `${atob('djJyYXlOLzYuNDU=')} cmliu/CF-Workers-SUB ${追加UA}(${userAgentHeader})`);
@@ -502,6 +510,7 @@ async function getUrl(request, targetUrl, 追加UA, userAgentHeader) {
 		headers: newHeaders,
 		body: request.method === "GET" ? null : request.body,
 		redirect: "follow",
+		signal,
 		cf: {
 			// 忽略SSL证书验证
 			insecureSkipVerify: true,
@@ -513,10 +522,10 @@ async function getUrl(request, targetUrl, 追加UA, userAgentHeader) {
 	});
 
 	// 输出请求的详细信息
-	console.log(`请求URL: ${targetUrl}`);
-	console.log(`请求头: ${JSON.stringify([...newHeaders])}`);
-	console.log(`请求方法: ${request.method}`);
-	console.log(`请求体: ${request.method === "GET" ? null : request.body}`);
+	if (DEBUG) console.log(`请求URL: ${targetUrl}`);
+	if (DEBUG) console.log(`请求头: ${JSON.stringify([...newHeaders])}`);
+	if (DEBUG) console.log(`请求方法: ${request.method}`);
+	if (DEBUG) console.log(`请求体: ${request.method === "GET" ? null : request.body}`);
 
 	// 发送请求并返回响应
 	return fetch(modifiedRequest);
@@ -702,10 +711,6 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						</div>
 						` : '<p>请绑定 <strong>变量名称</strong> 为 <strong>KV</strong> 的KV命名空间</p>'}
 					</div>
-					<br>
-					################################################################<br>
-					${decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tJTNDYnIlM0UKZ2l0aHViJTIwJUU5JUExJUI5JUU3JTlCJUFFJUU1JTlDJUIwJUU1JTlEJTgwJTIwU3RhciFTdGFyIVN0YXIhISElM0NiciUzRQolM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGQ0YtV29ya2Vycy1TVUIlMjclM0VodHRwcyUzQSUyRiUyRmdpdGh1Yi5jb20lMkZjbWxpdSUyRkNGLVdvcmtlcnMtU1VCJTNDJTJGYSUzRSUzQ2JyJTNFCi0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLSUzQ2JyJTNFCiUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMw=='))}
-					<br><br>UA: <strong>${request.headers.get('User-Agent')}</strong>
 					<script>
 					function copyToClipboard(text, qrcode) {
 						navigator.clipboard.writeText(text).then(() => {
