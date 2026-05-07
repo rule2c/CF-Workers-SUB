@@ -302,26 +302,18 @@ async function MD5MD5(text) {
 }
 
 function clashFix(content) {
+	const sep = content.includes('\r\n') ? '\r\n' : '\n';
+
 	if (content.includes('wireguard') && !content.includes('remote-dns-resolve')) {
-		let lines;
-		if (content.includes('\r\n')) {
-			lines = content.split('\r\n');
-		} else {
-			lines = content.split('\n');
-		}
-
-		let result = "";
-		for (let line of lines) {
+		const lines = content.split(sep);
+		content = lines.map(line => {
 			if (line.includes('type: wireguard')) {
-				const 备改内容 = `, mtu: 1280, udp: true`;
-				const 正确内容 = `, mtu: 1280, remote-dns-resolve: true, udp: true`;
-				result += line.replace(new RegExp(备改内容, 'g'), 正确内容) + '\n';
-			} else {
-				result += line + '\n';
+				const oldText = `, mtu: 1280, udp: true`;
+				const newText = `, mtu: 1280, remote-dns-resolve: true, udp: true`;
+				return line.replace(new RegExp(oldText, 'g'), newText);
 			}
-		}
-
-		content = result;
+			return line;
+		}).join(sep);
 	}
 
 	function patchClashProxyLine(line) {
@@ -338,21 +330,49 @@ function clashFix(content) {
 
 		if (!/(^|[,\s])type:\s*vless\b/.test(body)) return line;
 
-		if (!/(^|[,\s])udp:\s*true\b/.test(body)) {
+		// 已有 udp 字段则统一改成 udp: true，避免重复字段
+		if (/(^|[,\s])udp:\s*(true|false)\b/.test(body)) {
+			body = body.replace(/(^|[,\s])udp:\s*(true|false)\b/, '$1udp: true');
+		} else {
 			body += ', udp: true';
 		}
 
-		if (!/(^|[,\s])packet-encoding:\s*xudp\b/.test(body)) {
+		const isVisionReality =
+			/(^|[,\s])flow:\s*xtls-rprx-vision\b/.test(body) ||
+			/(^|[,\s])reality-opts:\s*\{/.test(body);
+
+		const hasPacketEncoding = /(^|[,\s])packet-encoding:\s*[^,\}]+/.test(body);
+
+		if (isVisionReality && !hasPacketEncoding) {
 			body += ', packet-encoding: xudp';
 		}
 
 		return prefix + body + suffix;
 	}
 
-	const lines = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
-	return lines.map(patchClashProxyLine).join('\n');
-}
+	const lines = content.split(sep);
+	let inProxies = false;
 
+	const result = lines.map(line => {
+		// 只进入 proxies: 段
+		if (/^proxies:\s*$/.test(line)) {
+			inProxies = true;
+			return line;
+		}
+
+		// 遇到新的顶级 YAML 段落，退出 proxies:
+		if (/^[^\s#][^:]*:\s*$/.test(line) && !/^proxies:\s*$/.test(line)) {
+			inProxies = false;
+			return line;
+		}
+
+		if (!inProxies) return line;
+
+		return patchClashProxyLine(line);
+	});
+
+	return result.join(sep);
+}
 async function proxyURL(proxyURL, url) {
 	const URLs = await ADD(proxyURL);
 	const fullURL = URLs[Math.floor(Math.random() * URLs.length)];
