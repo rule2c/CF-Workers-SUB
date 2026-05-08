@@ -313,69 +313,112 @@ async function MD5MD5(text) {
 function clashFix(content) {
 	const sep = content.includes('\r\n') ? '\r\n' : '\n';
 
-	const linesForWireguard = content.split(sep);
-	content = linesForWireguard.map(line => {
+	function escapeRegExp(str) {
+		return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	}
+
+	function removeField(body, key) {
+		const re = new RegExp(`(^|,\\s*)${escapeRegExp(key)}\\s*:\\s*(\\[[^\\]]*\\]|\\{[^{}]*\\}|[^,}]+)`, 'g');
+		body = body.replace(re, (match, prefix) => prefix && prefix.startsWith(',') ? '' : '');
+		return body.replace(/^\s*,\s*/, '').replace(/,\s*,/g, ',').replace(/\s+$/g, '');
+	}
+
+	function upsertField(body, key, value) {
+		const re = new RegExp(`(^|[,\\s])${escapeRegExp(key)}\\s*:\\s*(\\[[^\\]]*\\]|\\{[^{}]*\\}|[^,}]+)`);
+		if (re.test(body)) {
+			return body.replace(re, `$1${key}: ${value}`);
+		}
+		return body + `, ${key}: ${value}`;
+	}
+
+	// 1. 修复 WireGuard remote-dns-resolve；逐行处理，避免多个 WG 节点时漏改
+	content = content.split(sep).map(line => {
 		if (line.includes('type: wireguard') && !line.includes('remote-dns-resolve')) {
-			const oldText = `, mtu: 1280, udp: true`;
-			const newText = `, mtu: 1280, remote-dns-resolve: true, udp: true`;
-			return line.replace(new RegExp(oldText, 'g'), newText);
+			return line.replace(
+				/,\s*mtu:\s*1280,\s*udp:\s*true/g,
+				', mtu: 1280, remote-dns-resolve: true, udp: true'
+			);
 		}
 		return line;
 	}).join(sep);
 
-	function patchClashProxyLine(line) {
-		if (!line.includes('{') || !line.includes('type: vless')) return line;
+	function patchFlowLine(line) {
+		if (!line.includes('{') || !line.includes('type:')) return line;
 
 		const start = line.indexOf('{');
 		const end = line.lastIndexOf('}');
-
 		if (start === -1 || end === -1 || end <= start) return line;
 
 		const prefix = line.slice(0, start + 1);
 		let body = line.slice(start + 1, end);
 		const suffix = line.slice(end);
 
-		if (!/(^|[,\s])type:\s*vless\b/.test(body)) return line;
+		// 2. VLESS：普通 VLESS 补 udp；Reality/Vision 额外补 xudp
+		if (/(^|[,\s])type:\s*vless\b/.test(body)) {
+			if (/(^|[,\s])udp:\s*(true|false)\b/.test(body)) {
+				body = body.replace(/(^|[,\s])udp:\s*(true|false)\b/, '$1udp: true');
+			} else {
+				body += ', udp: true';
+			}
 
-		// 已有 udp 字段则统一改成 udp: true，避免重复字段
-		if (/(^|[,\s])udp:\s*(true|false)\b/.test(body)) {
-			body = body.replace(/(^|[,\s])udp:\s*(true|false)\b/, '$1udp: true');
-		} else {
-			body += ', udp: true';
+			const isVisionReality =
+				/(^|[,\s])flow:\s*xtls-rprx-vision\b/.test(body) ||
+				/(^|[,\s])reality-opts:\s*\{/.test(body);
+
+			const hasPacketEncoding = /(^|[,\s])packet-encoding:\s*[^,}]+/.test(body);
+
+			if (isVisionReality && !hasPacketEncoding) {
+				body += ', packet-encoding: xudp';
+			}
+
+			return prefix + body + suffix;
 		}
 
-		const isVisionReality =
-			/(^|[,\s])flow:\s*xtls-rprx-vision\b/.test(body) ||
-			/(^|[,\s])reality-opts:\s*\{/.test(body);
+		// 3. Hysteria2：只修复你的 VMiss-LAX hysteria2 节点，避免误改其他 hysteria2 节点
+		if (
+			/(^|[,\s])type:\s*hysteria2\b/.test(body) &&
+			/(^|[,\s])name:\s*[^,}]*VMiss-LAX_sb-hysteria2\b/.test(body)
+		) {
+			// 清理 subconverter 生成的多余字段
+			body = removeField(body, 'auth');
+			body = removeField(body, 'udp');
+			body = removeField(body, 'alpn');
 
-		const hasPacketEncoding = /(^|[,\s])packet-encoding:\s*[^,\}]+/.test(body);
+			// 恢复已验证可用的 Hysteria2 关键字段
+			body = upsertField(body, 'up', '"200 Mbps"');
+			body = upsertField(body, 'down', '"1000 Mbps"');
+			body = upsertField(body, 'sni', 'addons.mozilla.org');
+			body = upsertField(body, 'skip-cert-verify', 'false');
+			body = upsertField(
+				body,
+				'fingerprint',
+				'6D:B0:A3:FD:59:D5:8E:17:27:99:17:DC:03:A6:35:B5:D9:58:33:45:FC:45:72:69:3D:3F:1B:9A:8E:C9:EC:F5'
+			);
 
-		if (isVisionReality && !hasPacketEncoding) {
-			body += ', packet-encoding: xudp';
+			return prefix + body + suffix;
 		}
 
-		return prefix + body + suffix;
+		return line;
 	}
 
 	const lines = content.split(sep);
 	let inProxies = false;
 
 	const result = lines.map(line => {
-		// 只进入 proxies: 段
 		if (/^proxies:\s*$/.test(line)) {
 			inProxies = true;
 			return line;
 		}
 
-		// 遇到新的顶级 YAML 段落，退出 proxies:
-		if (/^[^\s#][^:]*:\s*$/.test(line) && !/^proxies:\s*$/.test(line)) {
+		// 遇到新的顶级 YAML 段落，退出 proxies，避免误改 proxy-groups / rules
+		if (/^[^\s#][^:]*:\s*(?:.*)?$/.test(line) && !/^proxies:\s*$/.test(line)) {
 			inProxies = false;
 			return line;
 		}
 
 		if (!inProxies) return line;
 
-		return patchClashProxyLine(line);
+		return patchFlowLine(line);
 	});
 
 	return result.join(sep);
