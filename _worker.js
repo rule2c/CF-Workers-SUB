@@ -319,8 +319,14 @@ function clashFix(content) {
 
 	function removeField(body, key) {
 		const re = new RegExp(`(^|,\\s*)${escapeRegExp(key)}\\s*:\\s*(\\[[^\\]]*\\]|\\{[^{}]*\\}|[^,}]+)`, 'g');
-		body = body.replace(re, (match, prefix) => prefix && prefix.startsWith(',') ? '' : '');
-		return body.replace(/^\s*,\s*/, '').replace(/,\s*,/g, ',').replace(/\s+$/g, '');
+		body = body.replace(re, (match, prefix) => {
+			return prefix && prefix.startsWith(',') ? '' : '';
+		});
+		return body
+			.replace(/^\s*,\s*/, '')
+			.replace(/,\s*,/g, ',')
+			.replace(/,\s*$/g, '')
+			.trim();
 	}
 
 	function upsertField(body, key, value) {
@@ -329,6 +335,12 @@ function clashFix(content) {
 			return body.replace(re, `$1${key}: ${value}`);
 		}
 		return body + `, ${key}: ${value}`;
+	}
+
+	function getField(body, key) {
+		const re = new RegExp(`(^|[,\\s])${escapeRegExp(key)}\\s*:\\s*(\\[[^\\]]*\\]|\\{[^{}]*\\}|[^,}]+)`);
+		const m = body.match(re);
+		return m ? String(m[2]).trim().replace(/^["']|["']$/g, '') : '';
 	}
 
 	// 1. 修复 WireGuard remote-dns-resolve；逐行处理，避免多个 WG 节点时漏改
@@ -374,26 +386,33 @@ function clashFix(content) {
 			return prefix + body + suffix;
 		}
 
-		// 3. Hysteria2：只修复你的 VMiss-LAX hysteria2 节点，避免误改其他 hysteria2 节点
-		if (
-			/(^|[,\s])type:\s*hysteria2\b/.test(body) &&
-			/(^|[,\s])name:\s*[^,}]*VMiss-LAX_sb-hysteria2\b/.test(body)
-		) {
-			// 清理 subconverter 生成的多余字段
-			body = removeField(body, 'auth');
-			body = removeField(body, 'udp');
-			body = removeField(body, 'alpn');
+		// 3. Hysteria2：通用清理 + 按 password 定向补强
+		if (/(^|[,\s])type:\s*hysteria2\b/.test(body)) {
+			const password = getField(body, 'password');
 
-			// 恢复已验证可用的 Hysteria2 关键字段
-			body = upsertField(body, 'up', '"200 Mbps"');
-			body = upsertField(body, 'down', '"1000 Mbps"');
-			body = upsertField(body, 'sni', 'addons.mozilla.org');
-			body = upsertField(body, 'skip-cert-verify', 'false');
-			body = upsertField(
-				body,
-				'fingerprint',
-				'6D:B0:A3:FD:59:D5:8E:17:27:99:17:DC:03:A6:35:B5:D9:58:33:45:FC:45:72:69:3D:3F:1B:9A:8E:C9:EC:F5'
-			);
+			// 通用清理：Hysteria2 不需要这些字段
+			if (password) {
+				body = removeField(body, 'auth');
+			}
+			body = removeField(body, 'udp');
+
+			if (/(^|[,\s])obfs:\s*none\b/.test(body)) {
+				body = removeField(body, 'obfs');
+			}
+
+			// 只修复你这个已验证可用的 hysteria2 节点
+			const isTargetHysteria2 =
+				password === '7f4f644e-c791-4ca7-956f-c5d9fe2085a2';
+
+			if (isTargetHysteria2) {
+				body = removeField(body, 'alpn');
+				body = removeField(body, 'fingerprint');
+
+				body = upsertField(body, 'up', '"200 Mbps"');
+				body = upsertField(body, 'down', '"1000 Mbps"');
+				body = upsertField(body, 'sni', 'addons.mozilla.org');
+				body = upsertField(body, 'skip-cert-verify', 'true');
+			}
 
 			return prefix + body + suffix;
 		}
