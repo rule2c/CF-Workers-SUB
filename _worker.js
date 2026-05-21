@@ -17,7 +17,7 @@ https://cfxr.eu.org/getSub
 `;
 
 let urls = [];
-let subConverter = "sc.29161319.xyz"; //在线订阅转换后端：SUBAPI.cmliussss.net。支持自建psub 可自行搭建https://github.com/bulianglin/psub
+let subConverter = "suc.29161319.xyz"; //在线订阅转换后端：SUBAPI.cmliussss.net。支持自建psub 可自行搭建https://github.com/bulianglin/psub
 let subConfig = "https://raw.githubusercontent.com/rule2c/Customized_Rules/refs/heads/main/Clash_noleak.ini"; //订阅配置文件
 let subProtocol = 'https';
 
