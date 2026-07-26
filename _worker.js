@@ -18,7 +18,8 @@ https://cfxr.eu.org/getSub
 
 let urls = [];
 let subConverter = "suc.29161319.xyz"; //在线订阅转换后端：SUBAPI.cmliussss.net。支持自建psub 可自行搭建https://github.com/bulianglin/psub
-let subConfig = "https://raw.githubusercontent.com/rule2c/Customized_Rules/refs/heads/main/Clash_noleak.ini"; //订阅配置文件
+let subConfig = "https://raw.githubusercontent.com/rule2c/Customized_Rules/refs/heads/main/Clash_noleak.ini"; //Clash家族订阅配置文件
+let subConfigSurge = "https://raw.githubusercontent.com/rule2c/Customized_Rules/refs/heads/main/Shadowrocket_noleak.ini"; //Surge/Shadowrocket 专用配置
 let subProtocol = 'https';
 
 export default {
@@ -40,6 +41,7 @@ export default {
 			subConverter = subConverter.split("//")[1] || subConverter;
 		}
 		subConfig = env.SUBCONFIG || subConfig;
+		subConfigSurge = env.SUBCONFIG_SURGE || subConfigSurge;
 		FileName = env.SUBNAME || FileName;
 
 		const currentDate = new Date();
@@ -204,7 +206,7 @@ export default {
 			} else if (订阅格式 == 'singbox') {
 				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=singbox&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 			} else if (订阅格式 == 'surge') {
-				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=surge&ver=4&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=surge&ver=4&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigSurge)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true&udp=true`;
 			} else if (订阅格式 == 'quanx') {
 				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=quanx&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&udp=true`;
 			} else if (订阅格式 == 'loon') {
